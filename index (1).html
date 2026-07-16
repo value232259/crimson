@@ -1,0 +1,1054 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Crimson Vigil — 120 Seconds</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<style>
+  :root{
+    --bg:#0b0710;
+    --panel:#1a0f1a;
+    --panel-edge:#2e1a2a;
+    --blood:#7a1230;
+    --blood-bright:#d4223f;
+    --gold:#c9a227;
+    --gold-dim:#8a7226;
+    --bone:#e8e0d0;
+    --bone-dim:#9c9186;
+    --purple:#4a1942;
+  }
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; user-select:none; }
+  html,body{
+    margin:0; padding:0; width:100%; height:100%;
+    background:var(--bg); overflow:hidden;
+    font-family:'Inter',sans-serif;
+    touch-action:none;
+    overscroll-behavior:none;
+  }
+  #app{ position:fixed; inset:0; }
+  canvas{ position:absolute; inset:0; width:100%; height:100%; display:block; }
+
+  /* ---------- vignette / fog atmosphere ---------- */
+  #vignette{
+    position:absolute; inset:0; pointer-events:none; z-index:5;
+    background:radial-gradient(ellipse at center, rgba(0,0,0,0) 40%, rgba(5,2,8,0.75) 100%);
+  }
+  #moonglow{
+    position:absolute; inset:0; pointer-events:none; z-index:1;
+    background:radial-gradient(circle at 50% 20%, rgba(122,18,48,0.18), transparent 55%);
+    animation:pulseGlow 6s ease-in-out infinite;
+  }
+  @keyframes pulseGlow{ 0%,100%{opacity:.7} 50%{opacity:1} }
+
+  h1,h2,h3,.display{ font-family:'Cinzel',serif; letter-spacing:0.04em; margin:0; }
+
+  /* ---------- overlays (start / levelup / gameover / victory) ---------- */
+  .overlay{
+    position:absolute; inset:0; z-index:20;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    background:radial-gradient(ellipse at center, rgba(20,10,20,0.94), rgba(6,3,8,0.98));
+    text-align:center; padding:24px; gap:18px;
+  }
+  .hidden{ display:none !important; }
+
+  .crest{
+    width:64px; height:64px; margin:0 auto;
+    border:2px solid var(--gold-dim); border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    color:var(--blood-bright); font-size:30px;
+    box-shadow:0 0 24px rgba(212,34,63,0.35), inset 0 0 12px rgba(0,0,0,0.6);
+  }
+  .title-main{ color:var(--bone); font-size:clamp(28px,8vw,46px); font-weight:900; text-shadow:0 0 18px rgba(212,34,63,0.5); }
+  .title-sub{ color:var(--gold); font-size:clamp(12px,3.4vw,15px); letter-spacing:0.35em; text-transform:uppercase; font-family:'Inter',sans-serif; font-weight:600; }
+
+  .lore{
+    max-width:340px; color:var(--bone-dim); font-size:13.5px; line-height:1.7;
+    border-top:1px solid var(--panel-edge); border-bottom:1px solid var(--panel-edge);
+    padding:14px 4px; margin:6px 0;
+  }
+  .lore b{ color:var(--bone); }
+
+  .btn{
+    font-family:'Cinzel',serif; font-weight:700; letter-spacing:0.08em;
+    background:linear-gradient(180deg, var(--blood-bright), var(--blood));
+    color:var(--bone); border:1px solid rgba(255,255,255,0.15);
+    padding:14px 42px; border-radius:4px; font-size:16px; cursor:pointer;
+    box-shadow:0 6px 0 rgba(0,0,0,0.5), 0 0 22px rgba(212,34,63,0.4);
+    transition:transform .12s ease;
+    text-transform:uppercase;
+  }
+  .btn:active{ transform:translateY(4px); box-shadow:0 2px 0 rgba(0,0,0,0.5); }
+  .btn.secondary{
+    background:linear-gradient(180deg, #2a1c30, #1a0f1a);
+    box-shadow:0 6px 0 rgba(0,0,0,0.5);
+  }
+
+  .stat-row{ display:flex; gap:22px; color:var(--bone-dim); font-size:13px; }
+  .stat-row b{ display:block; color:var(--gold); font-size:20px; font-family:'Cinzel',serif; }
+
+  /* ---------- HUD (in-game) ---------- */
+  #hud{
+    position:absolute; top:0; left:0; right:0; z-index:10;
+    display:flex; justify-content:space-between; align-items:flex-start;
+    padding:14px 12px; pointer-events:none;
+  }
+  #hp-wrap{
+    display:flex; flex-direction:column; gap:6px; align-items:center;
+    flex:1; max-width:300px;
+  }
+  #timer{
+    font-family:'Cinzel',serif; font-size:clamp(20px,5vw,26px); color:var(--gold);
+    text-shadow:0 0 10px rgba(201,162,39,0.6); font-weight:900; letter-spacing:0.05em;
+  }
+  #hp-bar-outer{
+    width:100%; height:16px; background:#1a0f14; border:1px solid var(--panel-edge);
+    border-radius:8px; overflow:hidden; box-shadow:inset 0 2px 4px rgba(0,0,0,0.6);
+    position:relative;
+  }
+  #hp-bar-inner{
+    height:100%; width:100%;
+    background:linear-gradient(180deg, #ff4d6d, var(--blood));
+    transition:width .18s ease;
+  }
+  #hp-label{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    font-size:10px; color:#fff; font-weight:800; text-shadow:0 1px 2px #000; letter-spacing:0.05em; }
+  #exp-bar-outer{
+    width:100%; height:8px; background:#12100a; border:1px solid var(--panel-edge); border-radius:5px; overflow:hidden;
+  }
+  #exp-bar-inner{ height:100%; width:0%; background:linear-gradient(90deg, var(--gold-dim), var(--gold)); transition:width .2s ease; }
+  #level-label{ font-size:11px; color:var(--bone-dim); letter-spacing:0.1em; }
+
+  #weapon-panel{
+    display:flex; flex-direction:column; gap:6px; align-items:flex-end;
+  }
+  .wicon{
+    width:38px; height:38px; border-radius:6px; background:var(--panel);
+    border:1px solid var(--panel-edge); display:flex; align-items:center; justify-content:center;
+    font-size:18px; position:relative; box-shadow:0 2px 6px rgba(0,0,0,0.5);
+  }
+  .wicon .lvl{
+    position:absolute; bottom:-3px; right:-3px; background:var(--gold); color:#1a0f1a;
+    font-size:9px; font-weight:800; border-radius:50%; width:15px; height:15px;
+    display:flex; align-items:center; justify-content:center; border:1px solid rgba(0,0,0,0.3);
+  }
+
+  /* ---------- levelup cards ---------- */
+  #levelup-screen .cards{ display:flex; gap:12px; flex-wrap:wrap; justify-content:center; max-width:420px; }
+  .card{
+    width:118px; background:var(--panel); border:1px solid var(--panel-edge); border-radius:8px;
+    padding:12px 8px; cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:6px;
+    transition:transform .12s ease, border-color .12s ease;
+  }
+  .card:active{ transform:scale(0.94); }
+  .card:hover{ border-color:var(--gold-dim); }
+  .card .cicon{ font-size:26px; }
+  .card .cname{ font-family:'Cinzel',serif; font-size:12.5px; color:var(--bone); font-weight:700; }
+  .card .clvl{ font-size:10px; color:var(--gold); letter-spacing:0.08em; }
+  .card .cdesc{ font-size:10px; color:var(--bone-dim); line-height:1.35; }
+
+  /* ---------- joystick ---------- */
+  #joystick-base{
+    position:absolute; width:96px; height:96px; border-radius:50%;
+    border:2px solid rgba(232,224,208,0.25); background:rgba(20,10,20,0.35);
+    z-index:15; pointer-events:none; display:none;
+    transform:translate(-50%,-50%);
+  }
+  #joystick-stick{
+    position:absolute; width:42px; height:42px; border-radius:50%;
+    background:radial-gradient(circle at 35% 30%, #d4223f, #6b0f28);
+    border:1px solid rgba(255,255,255,0.25);
+    z-index:16; pointer-events:none; display:none;
+    transform:translate(-50%,-50%);
+    box-shadow:0 0 12px rgba(212,34,63,0.6);
+  }
+
+  #touchcatch{ position:absolute; inset:0; z-index:8; }
+
+  /* ---------- camera hand-tracking ---------- */
+  #cam-preview{
+    position:absolute; left:12px; bottom:12px; z-index:14;
+    width:120px; height:90px; border-radius:8px; overflow:hidden;
+    border:1px solid var(--panel-edge); box-shadow:0 4px 14px rgba(0,0,0,0.6);
+    background:#000; display:none;
+  }
+  #cam-preview.show{ display:block; }
+  #cam-preview .flip{ position:absolute; inset:0; transform:scaleX(-1); }
+  #cam-preview video{ width:100%; height:100%; object-fit:cover; display:block; }
+  #cam-dot{
+    position:absolute; width:12px; height:12px; margin:-6px 0 0 -6px;
+    border-radius:50%; background:var(--blood-bright);
+    box-shadow:0 0 8px rgba(212,34,63,0.9); display:none;
+  }
+  #cam-status{
+    position:absolute; top:0; left:0; right:0; text-align:center;
+    font-size:9px; color:var(--bone); background:rgba(0,0,0,0.5);
+    padding:2px 0; letter-spacing:0.05em;
+  }
+  #cam-target-ring{
+    position:absolute; z-index:9; width:26px; height:26px; margin:-13px 0 0 -13px;
+    border:2px solid rgba(201,162,39,0.85); border-radius:50%; display:none;
+    box-shadow:0 0 10px rgba(201,162,39,0.5);
+  }
+  .mode-note{ font-size:11px; color:var(--gold-dim); letter-spacing:0.03em; }
+  .link-btn{
+    background:none; border:none; color:var(--bone-dim); font-size:12px;
+    text-decoration:underline; cursor:pointer; font-family:'Inter',sans-serif;
+    padding:4px;
+  }
+  #cam-loading{
+    font-size:12.5px; color:var(--gold); display:none; align-items:center; gap:8px;
+  }
+  .spinner{
+    width:14px; height:14px; border-radius:50%; border:2px solid rgba(201,162,39,0.25);
+    border-top-color:var(--gold); animation:spin 0.8s linear infinite;
+  }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+</style>
+</head>
+<body>
+<div id="app">
+  <canvas id="game"></canvas>
+  <div id="moonglow"></div>
+  <div id="vignette"></div>
+  <div id="touchcatch"></div>
+  <div id="joystick-base"></div>
+  <div id="joystick-stick"></div>
+  <div id="cam-target-ring"></div>
+
+  <div id="cam-preview">
+    <div id="cam-status">กล้อง</div>
+    <div class="flip">
+      <video id="webcam" autoplay playsinline muted></video>
+      <div id="cam-dot"></div>
+    </div>
+  </div>
+
+  <!-- HUD -->
+  <div id="hud" class="hidden">
+    <div id="hp-wrap">
+      <div id="timer">120</div>
+      <div id="hp-bar-outer"><div id="hp-bar-inner"></div><div id="hp-label">100 / 100</div></div>
+      <div id="exp-bar-outer"><div id="exp-bar-inner"></div></div>
+      <div id="level-label">LV. 1</div>
+    </div>
+    <div id="weapon-panel"></div>
+  </div>
+
+  <!-- Start screen -->
+  <div id="start-screen" class="overlay">
+    <div class="crest">✦</div>
+    <div class="title-sub">แดนต้องคำสาป</div>
+    <h1 class="title-main">CRIMSON VIGIL</h1>
+    <div class="lore">
+      รอดให้ครบ <b>120 วินาที</b> จากฝูงปีศาจที่ถาโถมเข้าใส่ไม่หยุดหย่อน<br>
+      ฆ่าศัตรูเพื่อรับ <b>EXP</b> เมื่อเลเวลอัพจะได้เลือกอาวุธ<br>
+      โดนโจมตี <b>-5 HP</b> ต่อครั้ง — ตายแล้วตายเลย
+    </div>
+    <button class="btn" id="start-btn">เริ่มพิธีกรรม (ใช้กล้อง)</button>
+    <div id="cam-loading"><div class="spinner"></div><span>กำลังขอสิทธิ์กล้อง...</span></div>
+    <div class="mode-note">ยกมือขึ้นหน้ากล้อง แล้วใช้ <b>นิ้วชี้</b> บังคับตัวละคร</div>
+    <button class="link-btn" id="touch-fallback-btn">ไม่มีกล้อง? เล่นด้วยการแตะจอแทน</button>
+  </div>
+
+  <!-- Level up screen -->
+  <div id="levelup-screen" class="overlay hidden">
+    <div class="title-sub">เลเวลอัพ</div>
+    <h2 class="title-main" style="font-size:26px;">เลือกพลังของเจ้า</h2>
+    <div class="cards" id="levelup-cards"></div>
+  </div>
+
+  <!-- Game over screen -->
+  <div id="gameover-screen" class="overlay hidden">
+    <div class="crest" style="border-color:var(--blood); color:var(--bone-dim);">☠</div>
+    <div class="title-sub">พิธีกรรมล้มเหลว</div>
+    <h1 class="title-main">เจ้าได้ล่วงลับ</h1>
+    <div class="stat-row">
+      <div>รอดชีวิต<b id="go-time">0s</b></div>
+      <div>เลเวล<b id="go-level">1</b></div>
+      <div>สังหาร<b id="go-kills">0</b></div>
+    </div>
+    <button class="btn" id="retry-btn">ลองใหม่</button>
+  </div>
+
+  <!-- Victory screen -->
+  <div id="victory-screen" class="overlay hidden">
+    <div class="crest">👑</div>
+    <div class="title-sub">คืนแห่งชัยชนะ</div>
+    <h1 class="title-main">เจ้ารอดชีวิต</h1>
+    <div class="stat-row">
+      <div>เลเวล<b id="win-level">1</b></div>
+      <div>สังหาร<b id="win-kills">0</b></div>
+    </div>
+    <button class="btn" id="win-retry-btn">เล่นอีกครั้ง</button>
+  </div>
+</div>
+
+<script>
+(function(){
+"use strict";
+
+// ---------------------------------------------------------------
+// Setup
+// ---------------------------------------------------------------
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+let W=0,H=0,DPR=Math.min(window.devicePixelRatio||1,2);
+
+function resize(){
+  W = window.innerWidth; H = window.innerHeight;
+  canvas.width = W*DPR; canvas.height = H*DPR;
+  canvas.style.width = W+'px'; canvas.style.height=H+'px';
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+window.addEventListener('resize', resize);
+resize();
+
+const els = {
+  hud: document.getElementById('hud'),
+  timer: document.getElementById('timer'),
+  hpInner: document.getElementById('hp-bar-inner'),
+  hpLabel: document.getElementById('hp-label'),
+  expInner: document.getElementById('exp-bar-inner'),
+  levelLabel: document.getElementById('level-label'),
+  weaponPanel: document.getElementById('weapon-panel'),
+  start: document.getElementById('start-screen'),
+  startBtn: document.getElementById('start-btn'),
+  levelup: document.getElementById('levelup-screen'),
+  levelupCards: document.getElementById('levelup-cards'),
+  gameover: document.getElementById('gameover-screen'),
+  goTime: document.getElementById('go-time'),
+  goLevel: document.getElementById('go-level'),
+  goKills: document.getElementById('go-kills'),
+  retryBtn: document.getElementById('retry-btn'),
+  victory: document.getElementById('victory-screen'),
+  winLevel: document.getElementById('win-level'),
+  winKills: document.getElementById('win-kills'),
+  winRetryBtn: document.getElementById('win-retry-btn'),
+  joyBase: document.getElementById('joystick-base'),
+  joyStick: document.getElementById('joystick-stick'),
+  touchcatch: document.getElementById('touchcatch'),
+  camPreview: document.getElementById('cam-preview'),
+  camDot: document.getElementById('cam-dot'),
+  camStatus: document.getElementById('cam-status'),
+  camTargetRing: document.getElementById('cam-target-ring'),
+  webcam: document.getElementById('webcam'),
+  camLoading: document.getElementById('cam-loading'),
+  touchFallbackBtn: document.getElementById('touch-fallback-btn'),
+};
+
+// ---------------------------------------------------------------
+// Weapon definitions
+// ---------------------------------------------------------------
+const WEAPON_DEFS = {
+  dagger: {
+    name:'มีดสังหาร', icon:'🗡️', maxLevel:5,
+    desc:(lv)=> lv===0 ? 'ขว้างมีดใส่ศัตรูใกล้สุดอัตโนมัติ' : `ดาเมจ +, ความเร็วในการขว้าง +`,
+    cooldown:(lv)=> Math.max(280, 900 - lv*130),
+    damage:(lv)=> 9 + lv*6,
+    pierce:(lv)=> 1 + Math.floor(lv/2),
+  },
+  whip: {
+    name:'แส้เลือด', icon:'🩸', maxLevel:5,
+    desc:(lv)=> lv===0 ? 'ฟาดแส้เป็นวงกว้างด้านหน้า' : `ระยะ + ดาเมจ +`,
+    cooldown:(lv)=> Math.max(500, 1100 - lv*100),
+    damage:(lv)=> 12 + lv*7,
+    range:(lv)=> 90 + lv*14,
+  },
+  orbit: {
+    name:'ใบมีดวนสาป', icon:'⚔️', maxLevel:5,
+    desc:(lv)=> lv===0 ? 'ใบมีดหมุนรอบตัวสร้างความเสียหายต่อเนื่อง' : `จำนวนใบมีด/ดาเมจ +`,
+    count:(lv)=> 1 + Math.floor(lv/2),
+    damage:(lv)=> 6 + lv*3,
+    radius:(lv)=> 58 + lv*4,
+  },
+  garlic: {
+    name:'ออร่าสาป', icon:'🔮', maxLevel:5,
+    desc:(lv)=> lv===0 ? 'ปล่อยออร่ารอบตัวเผาไหม้ศัตรูใกล้เคียง' : `รัศมี + ดาเมจ +`,
+    radius:(lv)=> 55 + lv*13,
+    damage:(lv)=> 4 + lv*3,
+    tick: 450,
+  }
+};
+
+// ---------------------------------------------------------------
+// Game state
+// ---------------------------------------------------------------
+let state = 'start'; // start, playing, levelup, paused, gameover, victory
+let player, monsters, gems, particles, projectiles;
+let elapsed = 0, timeLeft = 120, kills = 0, lastSpawn=0, spawnInterval=1400;
+let animId = null, lastTs = 0;
+let joystick = { active:false, originX:0, originY:0, dx:0, dy:0, touchId:null };
+let controlMode = 'touch'; // 'camera' | 'touch'
+let handTracker = { hands:null, camera:null, ready:false, target:{x:0.5,y:0.5}, active:false };
+
+function newPlayer(){
+  return {
+    x: W/2, y: H/2, r: 15,
+    hp: 100, maxHp: 100,
+    speed: 200,
+    level: 1, exp: 0, expNeed: 10,
+    weapons: {}, // key -> level
+    invuln: 0,
+    magnet: 46,
+    facingX: 1, facingY: 0,
+  };
+}
+
+function resetGame(){
+  player = newPlayer();
+  monsters = [];
+  gems = [];
+  particles = [];
+  projectiles = [];
+  elapsed = 0; timeLeft = 120; kills = 0; lastSpawn = 0; spawnInterval = 1400;
+  // start with dagger
+  player.weapons.dagger = 1;
+  weaponTimers = { dagger:0, whip:0, orbit:0, garlic:0 };
+}
+
+let weaponTimers = { dagger:0, whip:0, orbit:0, garlic:0 };
+
+// ---------------------------------------------------------------
+// Monster types
+// ---------------------------------------------------------------
+const MONSTER_TYPES = [
+  { key:'bat',   r:12, hp:16,  speed:95,  dmg:5, color:'#7a3fb5', exp:2, weight:5 },
+  { key:'imp',   r:14, hp:26,  speed:70,  dmg:5, color:'#c9432f', exp:3, weight:4 },
+  { key:'ghoul', r:19, hp:60,  speed:46,  dmg:5, color:'#4c6b3c', exp:6, weight:2 },
+];
+
+function pickMonsterType(t){
+  // slightly bias toward tougher monsters as time passes
+  const bonus = Math.min(3, Math.floor(t/30));
+  const pool = [];
+  MONSTER_TYPES.forEach((m,i)=>{
+    let w = m.weight;
+    if(i>0) w += bonus;
+    for(let k=0;k<w;k++) pool.push(m);
+  });
+  return pool[Math.floor(Math.random()*pool.length)];
+}
+
+function spawnMonster(t){
+  const type = pickMonsterType(t);
+  const edge = Math.floor(Math.random()*4);
+  let x,y;
+  const margin = 40;
+  if(edge===0){ x=-margin; y=Math.random()*H; }
+  else if(edge===1){ x=W+margin; y=Math.random()*H; }
+  else if(edge===2){ x=Math.random()*W; y=-margin; }
+  else { x=Math.random()*W; y=H+margin; }
+  const scale = 1 + Math.min(1.4, t/90); // scale hp with time
+  monsters.push({
+    x,y, r:type.r, hp:type.hp*scale, maxHp:type.hp*scale, speed:type.speed,
+    dmg:type.dmg, color:type.color, exp:type.exp, key:type.key,
+    hitFlash:0
+  });
+}
+
+// ---------------------------------------------------------------
+// Input: single-finger virtual joystick
+// ---------------------------------------------------------------
+function pointerDown(x,y,id){
+  joystick.active = true;
+  joystick.originX = x; joystick.originY = y;
+  joystick.dx = 0; joystick.dy = 0;
+  joystick.touchId = id;
+  els.joyBase.style.left = x+'px'; els.joyBase.style.top = y+'px';
+  els.joyBase.style.display='block';
+  els.joyStick.style.left = x+'px'; els.joyStick.style.top = y+'px';
+  els.joyStick.style.display='block';
+}
+function pointerMove(x,y){
+  if(!joystick.active) return;
+  let dx = x - joystick.originX, dy = y - joystick.originY;
+  const maxR = 46;
+  const dist = Math.hypot(dx,dy);
+  if(dist > maxR){ dx = dx/dist*maxR; dy = dy/dist*maxR; }
+  joystick.dx = dx/maxR; joystick.dy = dy/maxR;
+  els.joyStick.style.left = (joystick.originX+dx)+'px';
+  els.joyStick.style.top = (joystick.originY+dy)+'px';
+}
+function pointerUp(){
+  joystick.active=false; joystick.dx=0; joystick.dy=0; joystick.touchId=null;
+  els.joyBase.style.display='none'; els.joyStick.style.display='none';
+}
+
+els.touchcatch.addEventListener('touchstart', e=>{
+  if(state!=='playing' || controlMode!=='touch') return;
+  e.preventDefault();
+  const t = e.changedTouches[0];
+  pointerDown(t.clientX, t.clientY, t.identifier);
+}, {passive:false});
+els.touchcatch.addEventListener('touchmove', e=>{
+  if(state!=='playing' || controlMode!=='touch') return;
+  e.preventDefault();
+  for(const t of e.changedTouches){
+    if(t.identifier === joystick.touchId){ pointerMove(t.clientX, t.clientY); }
+  }
+}, {passive:false});
+els.touchcatch.addEventListener('touchend', e=>{
+  for(const t of e.changedTouches){
+    if(t.identifier === joystick.touchId){ pointerUp(); }
+  }
+}, {passive:false});
+els.touchcatch.addEventListener('touchcancel', pointerUp);
+
+// mouse fallback for desktop testing
+let mouseDown=false;
+els.touchcatch.addEventListener('mousedown', e=>{
+  if(state!=='playing' || controlMode!=='touch') return;
+  mouseDown=true; pointerDown(e.clientX,e.clientY,'mouse');
+});
+window.addEventListener('mousemove', e=>{ if(mouseDown) pointerMove(e.clientX,e.clientY); });
+window.addEventListener('mouseup', ()=>{ mouseDown=false; pointerUp(); });
+
+// ---------------------------------------------------------------
+// Camera + finger (hand-tracking) control
+// ---------------------------------------------------------------
+function onHandResults(results){
+  if(results.multiHandLandmarks && results.multiHandLandmarks.length>0){
+    const tip = results.multiHandLandmarks[0][8]; // index fingertip
+    // mirror x so it matches the mirrored preview (selfie-style)
+    handTracker.target.x = 1 - tip.x;
+    handTracker.target.y = tip.y;
+    handTracker.active = true;
+    els.camDot.style.display = 'block';
+    els.camDot.style.left = (tip.x*100)+'%';
+    els.camDot.style.top = (tip.y*100)+'%';
+    els.camStatus.textContent = 'พบมือ';
+  } else {
+    handTracker.active = false;
+    els.camDot.style.display = 'none';
+    els.camStatus.textContent = 'ยกมือขึ้น';
+  }
+}
+
+function initHandTracking(){
+  return new Promise((resolve, reject)=>{
+    if(typeof Hands === 'undefined' || typeof Camera === 'undefined'){
+      reject(new Error('mediapipe not loaded'));
+      return;
+    }
+    try{
+      const hands = new Hands({ locateFile:(f)=> `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}` });
+      hands.setOptions({ maxNumHands:1, modelComplexity:0, minDetectionConfidence:0.6, minTrackingConfidence:0.5 });
+      hands.onResults(onHandResults);
+      const camera = new Camera(els.webcam, {
+        onFrame: async ()=> { await hands.send({ image: els.webcam }); },
+        width:320, height:240
+      });
+      camera.start().then(()=>{
+        handTracker.hands = hands; handTracker.camera = camera; handTracker.ready = true;
+        resolve();
+      }).catch(reject);
+    }catch(err){ reject(err); }
+  });
+}
+
+// ---------------------------------------------------------------
+// Weapon firing logic
+// ---------------------------------------------------------------
+function nearestMonster(x,y, excludeSet){
+  let best=null, bestD=Infinity;
+  for(const m of monsters){
+    const d = (m.x-x)*(m.x-x)+(m.y-y)*(m.y-y);
+    if(d<bestD){ bestD=d; best=m; }
+  }
+  return best;
+}
+
+function fireDagger(lv){
+  const target = nearestMonster(player.x, player.y);
+  if(!target) return;
+  const dx = target.x-player.x, dy = target.y-player.y;
+  const dist = Math.hypot(dx,dy)||1;
+  projectiles.push({
+    x:player.x, y:player.y, vx:dx/dist*420, vy:dy/dist*420,
+    dmg: WEAPON_DEFS.dagger.damage(lv), pierce: WEAPON_DEFS.dagger.pierce(lv),
+    life:1.1, r:5, type:'dagger'
+  });
+}
+
+function fireWhip(lv){
+  const range = WEAPON_DEFS.whip.range(lv);
+  const dmg = WEAPON_DEFS.whip.damage(lv);
+  const fx = player.facingX, fy = player.facingY;
+  particles.push({type:'whip', x:player.x, y:player.y, dx:fx, dy:fy, range, life:0.18, maxLife:0.18});
+  for(const m of monsters){
+    const dx = m.x-player.x, dy = m.y-player.y;
+    const dist = Math.hypot(dx,dy);
+    if(dist>range) continue;
+    const dot = (dx*fx+dy*fy)/(dist||1);
+    if(dot > 0.15){ damageMonster(m, dmg); }
+  }
+}
+
+function tickOrbit(dt, lv){
+  const count = WEAPON_DEFS.orbit.count(lv);
+  const radius = WEAPON_DEFS.orbit.radius(lv);
+  const dmg = WEAPON_DEFS.orbit.damage(lv);
+  player._orbitAngle = (player._orbitAngle||0) + dt*2.6;
+  player._orbitBlades = [];
+  for(let i=0;i<count;i++){
+    const ang = player._orbitAngle + (Math.PI*2/count)*i;
+    const bx = player.x + Math.cos(ang)*radius;
+    const by = player.y + Math.sin(ang)*radius;
+    player._orbitBlades.push({x:bx,y:by});
+    for(const m of monsters){
+      const d = Math.hypot(m.x-bx, m.y-by);
+      if(d < m.r+10){
+        m._orbitCd = m._orbitCd||0;
+        if(m._orbitCd<=0){ damageMonster(m, dmg); m._orbitCd = 0.25; }
+      }
+    }
+  }
+  for(const m of monsters){ if(m._orbitCd>0) m._orbitCd -= dt; }
+}
+
+function tickGarlic(dt, lv){
+  const radius = WEAPON_DEFS.garlic.radius(lv);
+  weaponTimers.garlic += dt*1000;
+  if(weaponTimers.garlic >= WEAPON_DEFS.garlic.tick){
+    weaponTimers.garlic = 0;
+    const dmg = WEAPON_DEFS.garlic.damage(lv);
+    for(const m of monsters){
+      const d = Math.hypot(m.x-player.x, m.y-player.y);
+      if(d < radius + m.r) damageMonster(m, dmg);
+    }
+  }
+}
+
+function updateWeapons(dt){
+  for(const key in player.weapons){
+    const lv = player.weapons[key];
+    if(key==='dagger'){
+      weaponTimers.dagger += dt*1000;
+      const cd = WEAPON_DEFS.dagger.cooldown(lv);
+      if(weaponTimers.dagger >= cd){ weaponTimers.dagger = 0; fireDagger(lv); }
+    } else if(key==='whip'){
+      weaponTimers.whip += dt*1000;
+      const cd = WEAPON_DEFS.whip.cooldown(lv);
+      if(weaponTimers.whip >= cd){ weaponTimers.whip = 0; fireWhip(lv); }
+    } else if(key==='orbit'){
+      tickOrbit(dt, lv);
+    } else if(key==='garlic'){
+      tickGarlic(dt, lv);
+    }
+  }
+}
+
+// ---------------------------------------------------------------
+// Damage / death / exp
+// ---------------------------------------------------------------
+function damageMonster(m, dmg){
+  m.hp -= dmg;
+  m.hitFlash = 0.12;
+  if(m.hp<=0 && !m.dead){
+    m.dead = true;
+    kills++;
+    gems.push({x:m.x, y:m.y, exp:m.exp, r:6, vy:0});
+    spawnDeathParticles(m.x, m.y, m.color);
+  }
+}
+
+function spawnDeathParticles(x,y,color){
+  for(let i=0;i<8;i++){
+    const ang = Math.random()*Math.PI*2;
+    const spd = 60+Math.random()*90;
+    particles.push({type:'spark', x,y, vx:Math.cos(ang)*spd, vy:Math.sin(ang)*spd, life:0.4, maxLife:0.4, color});
+  }
+}
+
+function gainExp(amount){
+  player.exp += amount;
+  while(player.exp >= player.expNeed){
+    player.exp -= player.expNeed;
+    player.level++;
+    player.expNeed = 8 + player.level*6;
+    triggerLevelUp();
+  }
+}
+
+let levelUpQueue = 0;
+function triggerLevelUp(){
+  levelUpQueue++;
+}
+
+function buildLevelUpChoices(){
+  const owned = Object.keys(player.weapons);
+  const notOwned = Object.keys(WEAPON_DEFS).filter(k=>!owned.includes(k));
+  const choices = [];
+  // prioritize new weapons if player has fewer than 4, mix with upgrades
+  const pool = [];
+  owned.forEach(k=>{ if(player.weapons[k] < WEAPON_DEFS[k].maxLevel) pool.push({key:k, isNew:false}); });
+  notOwned.forEach(k=>{ pool.push({key:k, isNew:true}); });
+  // shuffle
+  for(let i=pool.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [pool[i],pool[j]]=[pool[j],pool[i]]; }
+  const count = Math.min(3, pool.length);
+  for(let i=0;i<count;i++) choices.push(pool[i]);
+  return choices;
+}
+
+function showLevelUp(){
+  state = 'levelup';
+  els.levelup.classList.remove('hidden');
+  els.levelupCards.innerHTML='';
+  const choices = buildLevelUpChoices();
+  choices.forEach(choice=>{
+    const def = WEAPON_DEFS[choice.key];
+    const curLv = player.weapons[choice.key]||0;
+    const card = document.createElement('div');
+    card.className='card';
+    card.innerHTML = `
+      <div class="cicon">${def.icon}</div>
+      <div class="cname">${def.name}</div>
+      <div class="clvl">${choice.isNew ? 'อาวุธใหม่' : 'LV '+curLv+' → '+(curLv+1)}</div>
+      <div class="cdesc">${def.desc(curLv)}</div>
+    `;
+    card.addEventListener('click', ()=>{
+      player.weapons[choice.key] = curLv+1;
+      els.levelup.classList.add('hidden');
+      levelUpQueue = Math.max(0, levelUpQueue-1);
+      if(levelUpQueue>0){ showLevelUp(); }
+      else { state='playing'; lastTs = performance.now(); }
+    }, {passive:true});
+    els.levelupCards.appendChild(card);
+  });
+}
+
+// ---------------------------------------------------------------
+// Update loop
+// ---------------------------------------------------------------
+function updatePlayerTouch(dt){
+  const dx = joystick.dx, dy = joystick.dy;
+  const mag = Math.hypot(dx,dy);
+  if(mag>0.05){
+    player.facingX = dx/mag; player.facingY = dy/mag;
+    player.x += dx*player.speed*dt;
+    player.y += dy*player.speed*dt;
+  }
+}
+
+function updatePlayerCamera(dt){
+  els.camTargetRing.style.display = handTracker.active ? 'block' : 'none';
+  if(!handTracker.active) return;
+  const targetX = handTracker.target.x*W;
+  const targetY = handTracker.target.y*H;
+  els.camTargetRing.style.left = targetX+'px';
+  els.camTargetRing.style.top = targetY+'px';
+  const dx = targetX-player.x, dy = targetY-player.y;
+  const dist = Math.hypot(dx,dy);
+  if(dist > 3){
+    player.facingX = dx/dist; player.facingY = dy/dist;
+    const maxMove = player.speed*1.6*dt; // slightly brisker so the character keeps up with the hand
+    if(dist <= maxMove){ player.x = targetX; player.y = targetY; }
+    else { player.x += dx/dist*maxMove; player.y += dy/dist*maxMove; }
+  }
+}
+
+function updatePlayer(dt){
+  if(controlMode==='camera') updatePlayerCamera(dt);
+  else updatePlayerTouch(dt);
+  player.x = Math.max(player.r, Math.min(W-player.r, player.x));
+  player.y = Math.max(player.r, Math.min(H-player.r, player.y));
+  if(player.invuln>0) player.invuln -= dt;
+}
+
+function updateMonsters(dt){
+  for(const m of monsters){
+    if(m.dead) continue;
+    const dx = player.x-m.x, dy = player.y-m.y;
+    const dist = Math.hypot(dx,dy)||1;
+    m.x += dx/dist*m.speed*dt;
+    m.y += dy/dist*m.speed*dt;
+    if(m.hitFlash>0) m.hitFlash -= dt;
+    // collision with player
+    if(dist < m.r+player.r && player.invuln<=0){
+      player.hp -= 5;
+      player.invuln = 0.6;
+      spawnDeathParticles(player.x, player.y, '#d4223f');
+      if(player.hp<=0){ player.hp=0; endGame(false); }
+    }
+  }
+  monsters = monsters.filter(m=>!m.dead);
+}
+
+function updateProjectiles(dt){
+  for(const p of projectiles){
+    p.x += p.vx*dt; p.y += p.vy*dt; p.life -= dt;
+    for(const m of monsters){
+      if(m._hitBy && m._hitBy.has(p)) continue;
+      const d = Math.hypot(m.x-p.x, m.y-p.y);
+      if(d < m.r+p.r){
+        damageMonster(m, p.dmg);
+        p.pierce--;
+        m._hitBy = m._hitBy||new Set();
+        m._hitBy.add(p);
+        if(p.pierce<=0){ p.life=0; break; }
+      }
+    }
+  }
+  projectiles = projectiles.filter(p=> p.life>0 && p.x>-50 && p.x<W+50 && p.y>-50 && p.y<H+50);
+}
+
+function updateGems(dt){
+  for(const g of gems){
+    const dx = player.x-g.x, dy = player.y-g.y;
+    const dist = Math.hypot(dx,dy);
+    if(dist < player.magnet){
+      const spd = 320;
+      g.x += dx/dist*spd*dt; g.y += dy/dist*spd*dt;
+    }
+    if(dist < player.r+g.r){
+      g.collected = true;
+      gainExp(g.exp);
+    }
+  }
+  gems = gems.filter(g=>!g.collected);
+}
+
+function updateParticles(dt){
+  for(const p of particles){
+    p.life -= dt;
+    if(p.type==='spark'){ p.x+=p.vx*dt; p.y+=p.vy*dt; p.vx*=0.9; p.vy*=0.9; }
+  }
+  particles = particles.filter(p=>p.life>0);
+}
+
+function endGame(won){
+  state = won ? 'victory' : 'gameover';
+  els.hud.classList.add('hidden');
+  pointerUp();
+  if(won){
+    els.winLevel.textContent = player.level;
+    els.winKills.textContent = kills;
+    els.victory.classList.remove('hidden');
+  } else {
+    els.goTime.textContent = Math.floor(elapsed)+'s';
+    els.goLevel.textContent = player.level;
+    els.goKills.textContent = kills;
+    els.gameover.classList.remove('hidden');
+  }
+}
+
+function updateHUD(){
+  const hpPct = Math.max(0, player.hp/player.maxHp*100);
+  els.hpInner.style.width = hpPct+'%';
+  els.hpLabel.textContent = Math.ceil(player.hp)+' / '+player.maxHp;
+  els.expInner.style.width = (player.exp/player.expNeed*100)+'%';
+  els.levelLabel.textContent = 'LV. '+player.level;
+  els.timer.textContent = Math.ceil(timeLeft);
+  els.weaponPanel.innerHTML='';
+  Object.keys(player.weapons).forEach(k=>{
+    const def = WEAPON_DEFS[k];
+    const div = document.createElement('div');
+    div.className='wicon';
+    div.innerHTML = `${def.icon}<span class="lvl">${player.weapons[k]}</span>`;
+    els.weaponPanel.appendChild(div);
+  });
+}
+
+// ---------------------------------------------------------------
+// Render
+// ---------------------------------------------------------------
+function drawGround(){
+  ctx.fillStyle = '#0e0810';
+  ctx.fillRect(0,0,W,H);
+  // subtle grid texture
+  ctx.strokeStyle = 'rgba(255,255,255,0.02)';
+  ctx.lineWidth = 1;
+  const grid = 48;
+  for(let x=0;x<W;x+=grid){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
+  for(let y=0;y<H;y+=grid){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
+}
+
+function drawPlayer(){
+  ctx.save();
+  if(player.invuln>0 && Math.floor(player.invuln*20)%2===0){ ctx.globalAlpha = 0.4; }
+  // orbit blades
+  if(player._orbitBlades){
+    ctx.fillStyle = '#c9a227';
+    player._orbitBlades.forEach(b=>{
+      ctx.beginPath(); ctx.arc(b.x,b.y,7,0,Math.PI*2); ctx.fill();
+    });
+  }
+  // garlic aura
+  if(player.weapons.garlic){
+    const r = WEAPON_DEFS.garlic.radius(player.weapons.garlic);
+    const grad = ctx.createRadialGradient(player.x,player.y,0,player.x,player.y,r);
+    grad.addColorStop(0,'rgba(150,80,200,0.14)');
+    grad.addColorStop(1,'rgba(150,80,200,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath(); ctx.arc(player.x,player.y,r,0,Math.PI*2); ctx.fill();
+  }
+  // body
+  ctx.fillStyle = '#e8e0d0';
+  ctx.beginPath(); ctx.arc(player.x,player.y,player.r,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#7a1230';
+  ctx.beginPath(); ctx.arc(player.x,player.y,player.r*0.55,0,Math.PI*2); ctx.fill();
+  // facing indicator
+  ctx.strokeStyle='#c9a227'; ctx.lineWidth=3;
+  ctx.beginPath();
+  ctx.moveTo(player.x, player.y);
+  ctx.lineTo(player.x+player.facingX*22, player.y+player.facingY*22);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawMonsters(){
+  for(const m of monsters){
+    ctx.save();
+    ctx.fillStyle = m.hitFlash>0 ? '#ffffff' : m.color;
+    ctx.beginPath(); ctx.arc(m.x,m.y,m.r,0,Math.PI*2); ctx.fill();
+    // hp bar
+    if(m.hp < m.maxHp){
+      const w = m.r*2;
+      ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.fillRect(m.x-w/2, m.y-m.r-9, w, 4);
+      ctx.fillStyle='#d4223f'; ctx.fillRect(m.x-w/2, m.y-m.r-9, w*Math.max(0,m.hp/m.maxHp), 4);
+    }
+    ctx.restore();
+  }
+}
+
+function drawProjectiles(){
+  ctx.fillStyle = '#e8e0d0';
+  for(const p of projectiles){
+    ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fill();
+  }
+}
+
+function drawGems(){
+  for(const g of gems){
+    ctx.save();
+    ctx.translate(g.x,g.y);
+    ctx.rotate(Math.PI/4);
+    ctx.fillStyle = '#5fd4d4';
+    ctx.fillRect(-g.r,-g.r,g.r*2,g.r*2);
+    ctx.restore();
+  }
+}
+
+function drawParticles(){
+  for(const p of particles){
+    if(p.type==='spark'){
+      ctx.globalAlpha = Math.max(0,p.life/p.maxLife);
+      ctx.fillStyle = p.color||'#fff';
+      ctx.beginPath(); ctx.arc(p.x,p.y,3,0,Math.PI*2); ctx.fill();
+      ctx.globalAlpha = 1;
+    } else if(p.type==='whip'){
+      ctx.globalAlpha = Math.max(0,p.life/p.maxLife)*0.7;
+      ctx.strokeStyle = '#d4223f';
+      ctx.lineWidth = 8;
+      const ang = Math.atan2(p.dy,p.dx);
+      ctx.beginPath();
+      ctx.arc(p.x,p.y, p.range*0.7, ang-0.5, ang+0.5);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+  }
+}
+
+function render(){
+  drawGround();
+  drawGems();
+  drawProjectiles();
+  drawMonsters();
+  drawParticles();
+  drawPlayer();
+}
+
+// ---------------------------------------------------------------
+// Main loop
+// ---------------------------------------------------------------
+function loop(ts){
+  animId = requestAnimationFrame(loop);
+  if(!lastTs) lastTs = ts;
+  let dt = (ts-lastTs)/1000;
+  lastTs = ts;
+  dt = Math.min(dt, 0.05);
+
+  if(state==='playing'){
+    elapsed += dt;
+    timeLeft = Math.max(0, 120-elapsed);
+
+    // spawn
+    lastSpawn += dt*1000;
+    spawnInterval = Math.max(280, 1400 - elapsed*9);
+    if(lastSpawn >= spawnInterval){ lastSpawn=0; spawnMonster(elapsed); }
+
+    updatePlayer(dt);
+    updateMonsters(dt);
+    updateWeapons(dt);
+    updateProjectiles(dt);
+    updateGems(dt);
+    updateParticles(dt);
+    updateHUD();
+
+    if(timeLeft<=0){ endGame(true); }
+    else if(levelUpQueue>0 && state==='playing'){ showLevelUp(); }
+  } else if(state==='levelup'){
+    updateParticles(dt);
+  }
+
+  render();
+}
+
+// ---------------------------------------------------------------
+// Screen flow
+// ---------------------------------------------------------------
+function launchPlayState(){
+  resetGame();
+  els.gameover.classList.add('hidden');
+  els.victory.classList.add('hidden');
+  els.start.classList.add('hidden');
+  els.hud.classList.remove('hidden');
+  els.camPreview.classList.toggle('show', controlMode==='camera');
+  state='playing';
+  lastTs = 0;
+  updateHUD();
+}
+
+function startGameWithCamera(){
+  if(handTracker.ready){ controlMode='camera'; launchPlayState(); return; }
+  els.startBtn.disabled = true;
+  els.camLoading.style.display = 'flex';
+  initHandTracking().then(()=>{
+    els.camLoading.style.display = 'none';
+    els.startBtn.disabled = false;
+    controlMode = 'camera';
+    launchPlayState();
+  }).catch(()=>{
+    els.camLoading.style.display = 'none';
+    els.startBtn.disabled = false;
+    els.camStatus.textContent = 'ไม่พบกล้อง';
+    controlMode = 'touch';
+    launchPlayState();
+  });
+}
+
+function startGameWithTouch(){
+  controlMode = 'touch';
+  launchPlayState();
+}
+
+function retryGame(){
+  // reuse whichever control mode is already active / was chosen last time
+  launchPlayState();
+}
+
+els.startBtn.addEventListener('click', startGameWithCamera);
+els.touchFallbackBtn.addEventListener('click', startGameWithTouch);
+els.retryBtn.addEventListener('click', retryGame);
+els.winRetryBtn.addEventListener('click', retryGame);
+
+animId = requestAnimationFrame(loop);
+
+})();
+</script>
+</body>
+</html>
